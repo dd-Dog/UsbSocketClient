@@ -1,4 +1,8 @@
+package com.dddog;
 
+import java.awt.Dimension;
+import java.awt.Rectangle;
+import java.awt.Toolkit;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -6,8 +10,31 @@ import java.io.PrintStream;
 import java.net.Socket;
 import java.util.Scanner;
 
-public class USBTest {
+import javax.swing.JFrame;
+
+public class USBSocketClient {
+	private JFrame mJFrame;
+	private static USBSocketClient mClient;
 	public static void main(String[] args) throws IOException {
+		
+		mClient = new USBSocketClient();
+		mClient.createFrame();
+	}
+
+	private void createFrame() {
+		mJFrame = new JFrame("USBSocketClient");
+		mJFrame.setVisible(true);
+		//get screen size
+		Dimension screensize = Toolkit.getDefaultToolkit().getScreenSize();
+		int screenHeight = (int) screensize.getHeight();
+		int screenWidth = (int) screensize.getWidth();
+		//set frame layout center in screen
+		mJFrame.setBounds(new Rectangle(screenWidth/2 - Constants.FRAME_WIDHT/2,
+				screenHeight/2 - Constants.FRAME_HEIGHT/2, Constants.FRAME_WIDHT, 
+				Constants.FRAME_HEIGHT));
+	}
+
+	private void start() throws IOException {
 		if (!setupAdbForward()) {
 			System.out.println("设置端口转发失败");
 			return;
