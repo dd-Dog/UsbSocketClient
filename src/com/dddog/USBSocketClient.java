@@ -25,13 +25,15 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Scanner;
 
+import javax.swing.JTextArea;
+
 public class USBSocketClient implements ActionListener {
 	private Frame mFrame;
 	private static USBSocketClient mClient;
 	Button mConnBtn;
 	Button mSendBtn;
 	TextField mCmdTF;
-	static TextArea mInfo;
+	static JTextArea mInfo;
 	Label mStatus;
 	Socket mSocket;
 	private static boolean mConnectStatus = false;;
@@ -74,7 +76,10 @@ public class USBSocketClient implements ActionListener {
 		mSendBtn = new Button("·¢ËÍ");
 		mSendBtn.setFont(Constants.DEFAULT_FONT);
 		mCmdTF = new TextField();
-		mInfo = new TextArea();
+		mCmdTF.setFont(Constants.DEFAULT_FONT);
+		mInfo = new JTextArea();
+		mInfo.setLineWrap(true);
+		mInfo.setWrapStyleWord(true);
 		mInfo.setText("Test for JLabel");
 		mInfo.setFont(new Font("", Font.PLAIN, 18));
 		
