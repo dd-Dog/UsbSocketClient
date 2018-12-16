@@ -27,6 +27,11 @@ import java.util.Scanner;
 
 import javax.swing.JTextArea;
 
+import org.json.JSONObject;
+
+import com.dddog.util.DDLog;
+import com.dddog.util.JsonUtil;
+
 public class USBSocketClient implements ActionListener {
 	private Frame mFrame;
 	private static USBSocketClient mClient;
@@ -52,11 +57,11 @@ public class USBSocketClient implements ActionListener {
 				System.exit(0);
 			}
 		});
-		//get screen size
+		// get screen size
 		Dimension screensize = Toolkit.getDefaultToolkit().getScreenSize();
 		int screenHeight = (int) screensize.getHeight();
 		int screenWidth = (int) screensize.getWidth();
-		//set frame layout center in screen
+		// set frame layout center in screen
 		mFrame.setBounds(new Rectangle(screenWidth / 2 - Constants.FRAME_WIDHT / 2,
 				screenHeight / 2 - Constants.FRAME_HEIGHT / 2, Constants.FRAME_WIDHT, Constants.FRAME_HEIGHT));
 
@@ -82,9 +87,9 @@ public class USBSocketClient implements ActionListener {
 		mInfo.setWrapStyleWord(true);
 		mInfo.setText("Test for JLabel");
 		mInfo.setFont(new Font("", Font.PLAIN, 18));
-		
+
 		mStatus = new Label("DISCONNECTED", Label.CENTER);
-		mStatus.setFont(new Font("",Font.BOLD, 20));
+		mStatus.setFont(new Font("", Font.BOLD, 20));
 		mStatus.setForeground(Color.RED);
 
 		mConnBtn.addActionListener(this);
@@ -107,17 +112,17 @@ public class USBSocketClient implements ActionListener {
 		gbl.setConstraints(mInfo, gbc);
 
 		gbc.fill = GridBagConstraints.BOTH;
-		//宽高占的网格数
+		// 宽高占的网格数
 		gbc.gridwidth = 1;
 		gbc.gridheight = 1;
-		//位置坐标
+		// 位置坐标
 		gbc.gridx = 1;
 		gbc.gridy = 0;
-		//填充形式
+		// 填充形式
 		gbc.weightx = 1;
 		gbc.weighty = 0;
 		gbc.insets = new Insets(5, 5, 5, 5);
-		//设置约束指定控件并应用到布局管理器
+		// 设置约束指定控件并应用到布局管理器
 		gbl.setConstraints(mConnBtn, gbc);
 
 		gbc.fill = GridBagConstraints.BOTH;
@@ -185,7 +190,17 @@ public class USBSocketClient implements ActionListener {
 						DataInputStream dis = new DataInputStream(mSocket.getInputStream());
 						int len = dis.read(buffer);
 						if (len > 0) {
-							printPanel("Server:" + new String(buffer, 0, len, "UTF-8"));
+							String recevStr = new String(buffer, 0, len, "UTF-8");
+							printPanel("Server:" + recevStr);
+							if(JsonUtil.isJson(recevStr, 0)) {
+								JSONObject jo = new JSONObject(recevStr);
+								String eventType = jo.getString("EventType");
+								jo.put("host", "client");
+								if(eventType.equals("101")) {
+									sendMsg(jo.toString());
+									printPanel("Client:" + jo.toString());
+								}
+							}
 						}
 					}
 				} catch (UnknownHostException e) {
@@ -200,7 +215,7 @@ public class USBSocketClient implements ActionListener {
 
 	private boolean setupAdbForward() {
 		try {
-			//PC上所有8000端口通信数据将被重定向到手机端9000端口server上
+			// PC上所有8000端口通信数据将被重定向到手机端9000端口server上
 			Runtime.getRuntime().exec("adb forward tcp:8000 tcp:9000");
 			return true;
 		} catch (IOException e) {
@@ -209,27 +224,45 @@ public class USBSocketClient implements ActionListener {
 		return false;
 	}
 
+	/**
+	 * 判断是否断开连接，断开返回true,没有返回false
+	 * @param socket
+	 * @return
+	 */
+	public Boolean isServerConnected(Socket socket) {
+		if(socket == null) return false;
+		return false;
+		/*try {
+			// 发送1个字节的紧急数据，默认情况下，服务器端没有开启紧急数据处理，不影响正常通信
+			socket.sendUrgentData(0);
+			return true;
+		} catch (Exception se) {
+			return false;
+		}*/
+	}
+
 	public void sendMsg(String msg) {
-		//建立socket对象，本机IP，8000端口
+		// 建立socket对象，本机IP，8000端口
 		try {
+			printPanel("sever connction state:" + isServerConnected(mSocket));
 			if (mSocket == null) {
 				mSocket = new Socket("127.0.0.1", 8000);
 			}
 			byte[] buffer = new byte[256];
 			DataInputStream dis = new DataInputStream(mSocket.getInputStream());
 			DataOutputStream dos = new DataOutputStream(mSocket.getOutputStream());
-			//发送数据
+			// 发送数据
 			printPanel("Client:" + msg);
-			//			dos.writeUTF(msg);//该方法对方接收到有乱码
+			// dos.writeUTF(msg);//该方法对方接收到有乱码
 			dos.write(msg.getBytes());
 			dos.flush();
-			//接收数据
+			// 接收数据
 //			int len = dis.read(buffer);
 //
 //			if (len > 0) {
 //				printPanel("Server:" + new String(buffer, 0, len, "UTF-8"));
 //			}
-			Thread.sleep(1000L);
+			Thread.sleep(500L);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
