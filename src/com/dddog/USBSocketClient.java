@@ -2,6 +2,7 @@ package com.dddog;
 
 import java.awt.Button;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Frame;
@@ -25,6 +26,7 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Scanner;
 
+import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 
 import org.json.JSONObject;
@@ -37,11 +39,16 @@ public class USBSocketClient implements ActionListener {
 	private static USBSocketClient mClient;
 	Button mConnBtn;
 	Button mSendBtn;
+	Button mClearBtn;
+	Button mForwardBtn;
 	TextField mCmdTF;
+	TextField mLocalPortTF;
+	TextField mRemotePortTF;
 	static JTextArea mInfo;
 	Label mStatus;
 	Socket mSocket;
-	private static boolean mConnectStatus = false;;
+	private static boolean mConnectStatus = false;
+	ListenServerThread mListenServerThread;
 
 	public static void main(String[] args) throws IOException {
 
@@ -76,17 +83,32 @@ public class USBSocketClient implements ActionListener {
 		GridBagConstraints gbc = new GridBagConstraints();
 		panel.setLayout(gbl);
 
+		mForwardBtn = new Button("ADB转发端口");
+		mForwardBtn.setFont(Constants.DEFAULT_FONT);
 		mConnBtn = new Button("打开连接");
 		mConnBtn.setFont(Constants.DEFAULT_FONT);
 		mSendBtn = new Button("发送");
 		mSendBtn.setFont(Constants.DEFAULT_FONT);
+		Label localPortLabel = new Label("本地端口：",Label.CENTER );
+		localPortLabel.setFont(Constants.DEFAULT_FONT);
+		Label remotePortLabel = new Label("服务器端口：",Label.CENTER);
+		remotePortLabel.setFont(Constants.DEFAULT_FONT);
+		mLocalPortTF = new TextField();
+		mLocalPortTF.setFont(Constants.DEFAULT_FONT);
+		mRemotePortTF = new TextField();
+		mRemotePortTF.setFont(Constants.DEFAULT_FONT);
 		mCmdTF = new TextField();
 		mCmdTF.setFont(Constants.DEFAULT_FONT);
 		mInfo = new JTextArea();
 		mInfo.setLineWrap(true);
 		mInfo.setWrapStyleWord(true);
-		mInfo.setText("Test for JLabel");
+		mInfo.setText("请连接...");
 		mInfo.setFont(new Font("", Font.PLAIN, 18));
+		//使用JScrollPane包裹TextArea
+		JScrollPane jsp1 = new JScrollPane(mInfo);
+
+		mClearBtn = new Button("清除窗口");
+		mClearBtn.setFont(Constants.DEFAULT_FONT);
 
 		mStatus = new Label("DISCONNECTED", Label.CENTER);
 		mStatus.setFont(new Font("", Font.BOLD, 20));
@@ -94,67 +116,72 @@ public class USBSocketClient implements ActionListener {
 
 		mConnBtn.addActionListener(this);
 		mSendBtn.addActionListener(this);
+		mClearBtn.addActionListener(this);
 
 		panel.add(mStatus);
 		panel.add(mConnBtn);
 		panel.add(mCmdTF);
 		panel.add(mSendBtn);
-		panel.add(mInfo);
+		panel.add(jsp1);
+		panel.add(mClearBtn);
+		
+		panel.add(mForwardBtn);
+		panel.add(localPortLabel);
+		panel.add(remotePortLabel);
+		panel.add(mLocalPortTF);
+		panel.add(mRemotePortTF);
 
-		gbc.fill = GridBagConstraints.BOTH;
-		gbc.gridwidth = 1;
-		gbc.gridheight = 1;
-		gbc.gridx = 0;
-		gbc.gridy = 0;
-		gbc.weightx = 1;
-		gbc.weighty = 0;
-		gbc.insets = new Insets(5, 5, 5, 5);
-		gbl.setConstraints(mInfo, gbc);
+		//连接状态显示区域
+		setConstraints(gbl, gbc, mStatus, GridBagConstraints.BOTH, 4, 1, 0, 0, 1, 0, null);
 
-		gbc.fill = GridBagConstraints.BOTH;
-		// 宽高占的网格数
-		gbc.gridwidth = 1;
-		gbc.gridheight = 1;
-		// 位置坐标
-		gbc.gridx = 1;
-		gbc.gridy = 0;
-		// 填充形式
-		gbc.weightx = 1;
-		gbc.weighty = 0;
-		gbc.insets = new Insets(5, 5, 5, 5);
-		// 设置约束指定控件并应用到布局管理器
-		gbl.setConstraints(mConnBtn, gbc);
+		//端口信息
+		setConstraints(gbl, gbc, localPortLabel, GridBagConstraints.BOTH, 1, 1, 0, 1, 1, 0, null);
+		setConstraints(gbl, gbc, mLocalPortTF, GridBagConstraints.BOTH, 1, 1, 1, 1, 1, 0, null);
+		setConstraints(gbl, gbc, remotePortLabel, GridBagConstraints.BOTH, 1, 1, 2, 1, 1, 0, null);
+		setConstraints(gbl, gbc, mRemotePortTF, GridBagConstraints.BOTH, 1, 1, 3, 1, 1, 0, null);
+		setConstraints(gbl, gbc, mForwardBtn, GridBagConstraints.BOTH, 1, 1, 4, 1, 1, 0, null);
+		
+		//连接按钮
+		setConstraints(gbl, gbc, mConnBtn, GridBagConstraints.BOTH, 1, 1, 4, 2, 1, 0, null);
 
-		gbc.fill = GridBagConstraints.BOTH;
-		gbc.gridwidth = 1;
-		gbc.gridheight = 1;
-		gbc.gridx = 0;
-		gbc.gridy = 1;
-		gbc.weightx = 1;
-		gbc.weighty = 0;
-		gbc.insets = new Insets(5, 5, 5, 5);
-		gbl.setConstraints(mCmdTF, gbc);
-
-		gbc.fill = GridBagConstraints.BOTH;
-		gbc.gridwidth = 1;
-		gbc.gridheight = 1;
-		gbc.gridx = 1;
-		gbc.gridy = 1;
-		gbc.weightx = 1;
-		gbc.weighty = 0;
-		gbc.insets = new Insets(5, 5, 5, 5);
-		gbl.setConstraints(mSendBtn, gbc);
-
-		gbc.fill = GridBagConstraints.BOTH;
-		gbc.gridwidth = 2;
-		gbc.gridheight = 1;
-		gbc.gridx = 0;
-		gbc.gridy = 2;
-		gbc.weightx = 2;
-		gbc.weighty = 1;
-		gbc.insets = new Insets(5, 5, 5, 5);
-		gbl.setConstraints(mInfo, gbc);
+		//输入指令区域
+		setConstraints(gbl, gbc, mCmdTF, GridBagConstraints.BOTH, 4, 2, 0, 2, 1, 0, null);
+		//发送按钮
+		setConstraints(gbl, gbc, mSendBtn, GridBagConstraints.BOTH, 1, 1, 4, 3, 1, 0, null);
+		//清除按钮
+		setConstraints(gbl, gbc, mClearBtn, GridBagConstraints.HORIZONTAL, 1, 1, 4, 4, 1, 0, null);
+		//展示信息
+		setConstraints(gbl, gbc, jsp1, GridBagConstraints.BOTH, 4, 1, 0, 4, 2, 1, null);
 		return panel;
+	}
+
+	/**
+	 * 设置布局
+	 * @param gbl 布局
+	 * @param gbc	布局容器
+	 * @param comp	添加到容器中的组件
+	 * @param gridwidth	占用宽度格数
+	 * @param gridheight	占用高度植格数
+	 * @param gridx	x坐标
+	 * @param gridy y坐标
+	 * @param weighx 窗口缩放时组件的缩放比例
+	 * @param weighty 窗口缩放时组件的缩放比例
+	 * @param insets	间隙
+	 */
+	public void setConstraints(GridBagLayout gbl, GridBagConstraints gbc, Component comp, int fill, int gridwidth,
+			int gridheight, int gridx, int gridy, double weighx, double weighty, Insets insets) {
+		gbc.fill = fill;
+		gbc.gridwidth = gridwidth;
+		gbc.gridheight = gridheight;
+		gbc.gridx = gridx;
+		gbc.gridy = gridy;
+		gbc.weightx = weighx;
+		gbc.weighty = weighty;
+		if (insets == null) {
+			insets = new Insets(5, 5, 5, 5);
+		}
+		gbc.insets = insets;
+		gbl.setConstraints(comp, gbc);
 	}
 
 	private void start() {
@@ -178,39 +205,39 @@ public class USBSocketClient implements ActionListener {
 	 * 监听服务端返回消息
 	 */
 	private void listenServer() {
-		new Thread() {
-			@Override
-			public void run() {
-				try {
-					while (mConnectStatus) {
-						if (mSocket == null) {
-							mSocket = new Socket("127.0.0.1", 8000);
-						}
-						byte[] buffer = new byte[256];
-						DataInputStream dis = new DataInputStream(mSocket.getInputStream());
-						int len = dis.read(buffer);
-						if (len > 0) {
-							String recevStr = new String(buffer, 0, len, "UTF-8");
-							printPanel("Server:" + recevStr);
-							if(JsonUtil.isJson(recevStr, 0)) {
-								JSONObject jo = new JSONObject(recevStr);
-								String eventType = jo.getString("EventType");
-								jo.put("host", "client");
-								if(eventType.equals("101")) {
-									sendMsg(jo.toString());
-									printPanel("Client:" + jo.toString());
-								}
+		mListenServerThread = new ListenServerThread();
+		mListenServerThread.start();
+	}
+
+	private class ListenServerThread extends Thread {
+		@Override
+		public void run() {
+			try {
+				while (mConnectStatus) {
+					if (mSocket == null) {
+						mSocket = new Socket("127.0.0.1", 8000);
+					}
+					byte[] buffer = new byte[256];
+					DataInputStream dis = new DataInputStream(mSocket.getInputStream());
+					int len = dis.read(buffer);
+					if (len > 0) {
+						String recevStr = new String(buffer, 0, len, "UTF-8");
+						printPanel("Server:" + recevStr);
+						if (JsonUtil.isJson(recevStr, 0)) {
+							JSONObject jo = new JSONObject(recevStr);
+							String eventType = jo.getString("EventType");
+							jo.put("host", "client");
+							if (eventType.equals("101")) {
+								sendMsg(jo.toString());
+								printPanel("Client:" + jo.toString());
 							}
 						}
 					}
-				} catch (UnknownHostException e) {
-					e.printStackTrace();
-				} catch (IOException e) {
-					e.printStackTrace();
 				}
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
-		}.start();
-
+		}
 	}
 
 	private boolean setupAdbForward() {
@@ -230,7 +257,8 @@ public class USBSocketClient implements ActionListener {
 	 * @return
 	 */
 	public Boolean isServerConnected(Socket socket) {
-		if(socket == null) return false;
+		if (socket == null)
+			return false;
 		return false;
 		/*try {
 			// 发送1个字节的紧急数据，默认情况下，服务器端没有开启紧急数据处理，不影响正常通信
@@ -251,17 +279,12 @@ public class USBSocketClient implements ActionListener {
 			byte[] buffer = new byte[256];
 			DataInputStream dis = new DataInputStream(mSocket.getInputStream());
 			DataOutputStream dos = new DataOutputStream(mSocket.getOutputStream());
+
 			// 发送数据
 			printPanel("Client:" + msg);
 			// dos.writeUTF(msg);//该方法对方接收到有乱码
-			dos.write(msg.getBytes());
+			dos.write(msg.getBytes("UTF-8"));
 			dos.flush();
-			// 接收数据
-//			int len = dis.read(buffer);
-//
-//			if (len > 0) {
-//				printPanel("Server:" + new String(buffer, 0, len, "UTF-8"));
-//			}
 			Thread.sleep(500L);
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -278,7 +301,13 @@ public class USBSocketClient implements ActionListener {
 				printPanel("disconnect link to server...");
 				if (mSocket != null) {
 					try {
-						mSocket.close();
+						mConnectStatus = false;
+						mListenServerThread.stop();
+						if (!mSocket.isClosed())
+							mSocket.close();
+						mStatus.setForeground(Color.RED);
+						mStatus.setText("DISCONNECTED");
+						mConnBtn.setLabel("打开连接");
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
@@ -292,6 +321,8 @@ public class USBSocketClient implements ActionListener {
 			} else {
 				printPanel("do not send empty body!");
 			}
+		} else if (event.getSource() == mClearBtn) {
+			mInfo.setText("");
 		}
 	}
 
