@@ -33,6 +33,7 @@ import javax.swing.JTextField;
 import org.json.JSONObject;
 
 import com.dddog.util.DDLog;
+import com.dddog.util.DateFormatUtil;
 import com.dddog.util.JsonUtil;
 
 public class USBSocketClient implements ActionListener {
@@ -107,8 +108,8 @@ public class USBSocketClient implements ActionListener {
 		JScrollPane jsp2 = new JScrollPane(mCmdTF);
 		mCmdTF.setFont(Constants.DEFAULT_FONT);
 		mInfo = new JTextArea();
-		mInfo.setLineWrap(true);
-		mInfo.setWrapStyleWord(true);
+		mInfo.setLineWrap(true);	//自动换行
+		mInfo.setWrapStyleWord(true);	//换行不断字，中文占两个字节，可以会中间换行
 		mInfo.setText("请连接...");
 		mInfo.setFont(new Font("", Font.PLAIN, 18));
 		//使用JScrollPane包裹TextArea
@@ -116,14 +117,14 @@ public class USBSocketClient implements ActionListener {
 
 		mClearHistoryBtn = new Button("清空记录");
 		mClearHistoryBtn.setFont(Constants.DEFAULT_FONT);
-		
+
 		mClearCmdBtn = new Button("清空指令");
 		mClearCmdBtn.setFont(Constants.DEFAULT_FONT);
 
 		mForwardStatus = new Label("ADB未转发", Label.CENTER);
 		mForwardStatus.setFont(new Font("", Font.BOLD, 20));
 		mForwardStatus.setForeground(Constants.DARK_RED);
-		
+
 		mConnStatus = new Label("SOCKET未连接", Label.CENTER);
 		mConnStatus.setFont(new Font("", Font.BOLD, 20));
 		mConnStatus.setForeground(Constants.DARK_RED);
@@ -212,48 +213,57 @@ public class USBSocketClient implements ActionListener {
 			printPanel("connect2Server failed, no create forward!");
 			return;
 		}
-		try {
-			if (mSocket == null ||(mSocket!=null && mSocket.isClosed())) {
-				if (mLocalPort != null && !mLocalPort.equals("")) {
-					int localPort = Integer.parseInt(mLocalPort);
-					mSocket = new Socket("127.0.0.1", localPort);
-				}
-			}
-			byte[] buffer = new byte[256];
-			DataInputStream dis = new DataInputStream(mSocket.getInputStream());
-			DataOutputStream dos = new DataOutputStream(mSocket.getOutputStream());
+		new Thread() {
+			public void run() {
 
-			String msg = "Hello,this is client!";
-			// 发送数据
-			printPanel("Client:" + msg);
-			dos.write(msg.getBytes("UTF-8"));
-			dos.flush();
-
-			//读取回应
-			int len = dis.read(buffer);
-			if (len < 0) {
-				printPanel("Server not response!");
-				mConnectStatus = false;
-			} else {
-				mConnectStatus = true;
-				String ack = new String(buffer, 0, len);
-				printPanel("Server:" + ack);
-				printPanel("Server connected!");
-				listenServer();
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			mConnectStatus = false;
-			if (mSocket != null) {
 				try {
-					mSocket.close();
-				} catch (IOException e1) {
-					e1.printStackTrace();
+					if (mSocket == null || (mSocket != null && mSocket.isClosed())) {
+						if (mLocalPort != null && !mLocalPort.equals("")) {
+							int localPort = Integer.parseInt(mLocalPort);
+							mSocket = new Socket("127.0.0.1", localPort);
+						}
+					}
+					byte[] buffer = new byte[256];
+					DataInputStream dis = new DataInputStream(mSocket.getInputStream());
+					DataOutputStream dos = new DataOutputStream(mSocket.getOutputStream());
+
+					String msg = "Hello,this is client!";
+					// 发送数据
+					printPanel("Client:" + msg);
+					dos.write(msg.getBytes("UTF-8"));
+					dos.flush();
+
+					printPanel("waiting response...");
+					//读取回应
+					int len = dis.read(buffer);
+					if (len < 0) {
+						printPanel("Server not response!");
+						mConnectStatus = false;
+						if (!mSocket.isClosed())
+							mSocket.close();
+						updateConnectStatus();
+					} else {
+						mConnectStatus = true;
+						String ack = new String(buffer, 0, len);
+						printPanel("Server:" + ack);
+						printPanel("Server connected!");
+						listenServer();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+					mConnectStatus = false;
+					if (mSocket != null) {
+						try {
+							mSocket.close();
+						} catch (IOException e1) {
+							e1.printStackTrace();
+						}
+					}
+				} finally {
+					updateConnectStatus();
 				}
 			}
-		} finally {
-			updateConnectStatus();
-		}
+		}.start();
 	}
 
 	/**
@@ -269,30 +279,42 @@ public class USBSocketClient implements ActionListener {
 		public void run() {
 			try {
 				while (mConnectStatus) {
-					if (mSocket == null ||(mSocket!=null && mSocket.isClosed())) {
+					if (mSocket == null || (mSocket != null && mSocket.isClosed())) {
 						if (mLocalPort != null && !mLocalPort.equals("")) {
 							int localPort = Integer.parseInt(mLocalPort);
 							mSocket = new Socket("127.0.0.1", localPort);
 						}
 					}
-					byte[] buffer = new byte[256];
+					int buffSize = 256;
+					byte[] buffer = new byte[buffSize];
 					DataInputStream dis = new DataInputStream(mSocket.getInputStream());
+					int sumLen = 0;//接收 的总长度
 					int len = -1;
 					StringBuilder sb = new StringBuilder();
-					while ((len = dis.read(buffer)) != -1) {
+					/*开始读取并拼接字符串到sb中*/
+					while ((len = dis.read(buffer)) >= buffSize) {
 						String str = new String(buffer, 0, len, "UTF-8");
 						sb.append(str);
+						sumLen += len;
 					}
-					String recevStr = sb.toString();
-					printPanel("Server:" + recevStr);
-					if (JsonUtil.isJson(recevStr, 0)) {
-						JSONObject jo = new JSONObject(recevStr);
-						String eventType = jo.getString("EventType");
-						jo.put("host", "client");
-						if (eventType.equals("101")) { //101是服务器的心跳连接
-							sendMsg(jo.toString());
-							printPanel("Client:" + jo.toString());
+					sumLen += len;
+					if (sumLen > 0) {
+						String str = new String(buffer, 0, len, "UTF-8");
+	                    sb.append(str);
+						String recevStr = sb.toString();
+						/*拼接字符串完成*/
+						printPanel("Server:" + recevStr);
+						if (JsonUtil.isJson(recevStr, 0)) {
+							JSONObject jo = new JSONObject(recevStr);
+							String eventType = jo.getString("EventType");
+							jo.put("host", "client");
+							if (eventType.equals("101")) { //101是服务器的心跳连接
+								sendMsg(jo.toString());
+								printPanel("Client:" + jo.toString());
+							}
 						}
+					}else {
+						
 					}
 				}
 			} catch (Exception e) {
@@ -356,12 +378,12 @@ public class USBSocketClient implements ActionListener {
 				sb.append(str);
 			}
 			String adbList = sb.toString().toString();
-			printPanel("adb forward list=" + adbList);
 			String[] forwardArr = adbList.split("\n");
 			for (String forward : forwardArr) {
-				printPanel("forward=" + forward);
 				if (forward.contains(localPort) && forward.contains(serverPort)) {
+					printPanel("forward=" + forward);
 					mForwardSuccess = true;
+					break;
 				}
 			}
 			return true;
@@ -375,30 +397,16 @@ public class USBSocketClient implements ActionListener {
 	}
 
 	/**
-	 * 判断是否断开连接，断开返回true,没有返回false
-	 * @param socket
-	 * @return
+	 * 发送消息
+	 * @param msg
 	 */
-	public Boolean isServerConnected(Socket socket) {
-		if (socket == null)
-			return false;
-		return false;
-		/*try {
-			// 发送1个字节的紧急数据，默认情况下，服务器端没有开启紧急数据处理，不影响正常通信
-			socket.sendUrgentData(0);
-			return true;
-		} catch (Exception se) {
-			return false;
-		}*/
-	}
-
 	public void sendMsg(String msg) {
 		// 建立socket对象，本机IP，8000端口
+		if (!mForwardSuccess || !mConnectStatus) {
+			printPanel("请先建立连接！");
+			return;
+		}
 		try {
-			printPanel("sever connction state:" + isServerConnected(mSocket));
-			if (mSocket == null) {
-				mSocket = new Socket("127.0.0.1", 8000);
-			}
 			byte[] buffer = new byte[256];
 			DataInputStream dis = new DataInputStream(mSocket.getInputStream());
 			DataOutputStream dos = new DataOutputStream(mSocket.getOutputStream());
@@ -434,7 +442,9 @@ public class USBSocketClient implements ActionListener {
 				printPanel("请先建立转发！");
 				return;
 			}
+			System.out.println("1111");
 			if (!mConnectStatus) {
+				System.out.println("2222");
 				printPanel("start to connect server...");
 				connect2Server();
 			} else {
@@ -469,7 +479,7 @@ public class USBSocketClient implements ActionListener {
 			}
 		} else if (event.getSource() == mClearHistoryBtn) {
 			mInfo.setText("");
-		}else if(event.getSource() == mClearCmdBtn) {
+		} else if (event.getSource() == mClearCmdBtn) {
 			//TextFiled不允许设置为空
 			mCmdTF.setText(" ");
 			JTextField jtf;
@@ -479,7 +489,8 @@ public class USBSocketClient implements ActionListener {
 	public static void printPanel(String msg) {
 		if (mInfo != null) {
 			String textBefore = mInfo.getText();
-			mInfo.setText(textBefore + "\r\n" + msg);
+			mInfo.setText(textBefore + "\r\n" + (DateFormatUtil.getTime4() + "---- "+msg));
+			mInfo.setCaretPosition(mInfo.getText().length());
 		}
 	}
 }
