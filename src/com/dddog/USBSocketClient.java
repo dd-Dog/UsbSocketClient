@@ -304,7 +304,7 @@ public class USBSocketClient implements ActionListener {
 						String recevStr = sb.toString();
 						/*Æ´½Ó×Ö·û´®Íê³É*/
 						printPanel("Server:" + recevStr);
-						if (JsonUtil.isJson(recevStr, 0)) {
+						if (JsonUtil.isJson(recevStr, 0) && JsonUtil.isJsonObj(recevStr)) {
 							JSONObject jo = new JSONObject(recevStr);
 							String eventType = jo.getString("EventType");
 							jo.put("host", "client");
