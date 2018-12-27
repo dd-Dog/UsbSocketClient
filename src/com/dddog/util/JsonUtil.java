@@ -27,7 +27,7 @@ public class JsonUtil {
 	 * @return
 	 */
 	private static boolean isJsonStart(String json) {
-		if (json == null || json.equals(""))  {
+		if (!(json == null || json.equals("")))  {
 			json = json.trim();
 			if (json.length() > 1) {
 				char s = json.charAt(0);

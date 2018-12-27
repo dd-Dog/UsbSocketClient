@@ -21,6 +21,8 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.UnknownHostException;
@@ -104,12 +106,12 @@ public class USBSocketClient implements ActionListener {
 		mLocalPortTF.setFont(Constants.DEFAULT_FONT);
 		mRemotePortTF = new TextField(Constants.SERVER_PORT);
 		mRemotePortTF.setFont(Constants.DEFAULT_FONT);
-		mCmdTF = new JTextField();
+		mCmdTF = new JTextField("{\"CallNumber\":\"15033262664\",\"EventType\":\"1\"}");
 		JScrollPane jsp2 = new JScrollPane(mCmdTF);
 		mCmdTF.setFont(Constants.DEFAULT_FONT);
 		mInfo = new JTextArea();
-		mInfo.setLineWrap(true);	//自动换行
-		mInfo.setWrapStyleWord(true);	//换行不断字，中文占两个字节，可以会中间换行
+		mInfo.setLineWrap(true); //自动换行
+		mInfo.setWrapStyleWord(true); //换行不断字，中文占两个字节，可以会中间换行
 		mInfo.setText("请连接...");
 		mInfo.setFont(new Font("", Font.PLAIN, 18));
 		//使用JScrollPane包裹TextArea
@@ -300,21 +302,26 @@ public class USBSocketClient implements ActionListener {
 					sumLen += len;
 					if (sumLen > 0) {
 						String str = new String(buffer, 0, len, "UTF-8");
-	                    sb.append(str);
+						sb.append(str);
 						String recevStr = sb.toString();
 						/*拼接字符串完成*/
 						printPanel("Server:" + recevStr);
+						System.out.println("isJson=" + JsonUtil.isJson(recevStr, 0) + ",isJsonObj="
+								+ JsonUtil.isJsonObj(recevStr));
 						if (JsonUtil.isJson(recevStr, 0) && JsonUtil.isJsonObj(recevStr)) {
+							System.out.println("parse json");
 							JSONObject jo = new JSONObject(recevStr);
 							String eventType = jo.getString("EventType");
-							jo.put("host", "client");
 							if (eventType.equals("101")) { //101是服务器的心跳连接
+								jo.put("host", "client");
 								sendMsg(jo.toString());
 								printPanel("Client:" + jo.toString());
+							} else if (eventType.equals("102")) {
+								receiveFile(null);
 							}
 						}
-					}else {
-						
+					} else {
+
 					}
 				}
 			} catch (Exception e) {
@@ -482,14 +489,65 @@ public class USBSocketClient implements ActionListener {
 		} else if (event.getSource() == mClearCmdBtn) {
 			//TextFiled不允许设置为空
 			mCmdTF.setText(" ");
-			JTextField jtf;
 		}
+	}
+
+	/**
+	 * 接收 服务器传来的文件
+	 * @param path
+	 */
+	private void receiveFile(String path) {
+		System.out.println("receiveFile");
+		final String path2 = "C:\\Users\\bian\\Desktop";
+		//		if(true)return;
+		new Thread() {
+			@Override
+			public void run() {
+				try {
+					//建立新的端口转发
+					Runtime.getRuntime()
+							.exec("adb forward tcp:" + Constants.DOWNLOAD_PORT + " tcp:" + Constants.SERVER_PORT);
+					//建立socket连接
+					Socket socket = new Socket("127.0.0.1", Constants.DOWNLOAD_PORT);
+
+					//获取文件名称
+					DataInputStream dataInputStream = new DataInputStream(socket.getInputStream());
+					System.out.println("start read");
+					int flag = dataInputStream.readInt();
+					System.out.println("flag=" + flag);
+					String fileName = dataInputStream.readUTF();
+					System.out.println("fileName=" + fileName);
+					//获取文件长度
+					long readLong = dataInputStream.readLong();
+					System.out.println("file length" + readLong);
+					//获取文件输入流
+					File file = new File(path2, fileName);
+					if (file.exists()) {
+						file.delete();
+					} else {
+						file.createNewFile();
+					}
+
+					FileOutputStream fos = new FileOutputStream(file);
+					// 开始接收文件
+					byte[] bytes = new byte[1024];
+					int num = 0;
+					while ((num = dataInputStream.read(bytes, 0, bytes.length)) != -1) {
+						fos.write(bytes, 0, num);
+						fos.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}.start();
+
 	}
 
 	public static void printPanel(String msg) {
 		if (mInfo != null) {
 			String textBefore = mInfo.getText();
-			mInfo.setText(textBefore + "\r\n" + (DateFormatUtil.getTime4() + "---- "+msg));
+			mInfo.setText(textBefore + "\r\n" + (DateFormatUtil.getTime4() + "---- " + msg));
 			mInfo.setCaretPosition(mInfo.getText().length());
 		}
 	}

@@ -10,6 +10,8 @@ public class Constants {
 	public static final String LOCAL_PORT = "8000";
 	public static final String SERVER_PORT = "8000";
 	
+	public static final int DOWNLOAD_PORT = 9000;
+	
 	//R,G,B,A
 	public static final Color DARK_GREEN = new Color(0, 139, 69, 0);
 	public static final Color DARK_RED = new Color(178, 34, 34, 0);
