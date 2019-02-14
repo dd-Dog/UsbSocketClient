@@ -22,10 +22,12 @@ import java.awt.event.WindowEvent;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.LinkedList;
 import java.util.Scanner;
 
 import javax.swing.JScrollPane;
@@ -33,7 +35,9 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 
 import org.json.JSONObject;
+import org.omg.CORBA_2_3.portable.InputStream;
 
+import com.dddog.packet.FramePacket;
 import com.dddog.util.DDLog;
 import com.dddog.util.DateFormatUtil;
 import com.dddog.util.JsonUtil;
@@ -46,6 +50,7 @@ public class USBSocketClient implements ActionListener {
 	Button mClearHistoryBtn;
 	Button mClearCmdBtn;
 	Button mForwardBtn;
+	Button mReceiveStreamBtn;
 	JTextField mCmdTF;
 	TextField mLocalPortTF;
 	TextField mRemotePortTF;
@@ -58,11 +63,17 @@ public class USBSocketClient implements ActionListener {
 	ListenServerThread mListenServerThread;
 	String mLocalPort;
 	String mServerPort;
+	//接收的数据缓冲区
+	private static LinkedList<FramePacket> mPacketList;
+	private static int mBufferSize;
+	private static final int BUFFER_SIZE = 50 * 100;
 
 	public static void main(String[] args) throws IOException {
 
 		mClient = new USBSocketClient();
 		mClient.createFrame();
+		mPacketList = new LinkedList<FramePacket>();
+		mBufferSize = BUFFER_SIZE;
 	}
 
 	private void createFrame() {
@@ -123,6 +134,9 @@ public class USBSocketClient implements ActionListener {
 		mClearCmdBtn = new Button("清空指令");
 		mClearCmdBtn.setFont(Constants.DEFAULT_FONT);
 
+		mReceiveStreamBtn = new Button("接收PCM");
+		mReceiveStreamBtn.setFont(Constants.DEFAULT_FONT);
+
 		mForwardStatus = new Label("ADB未转发", Label.CENTER);
 		mForwardStatus.setFont(new Font("", Font.BOLD, 20));
 		mForwardStatus.setForeground(Constants.DARK_RED);
@@ -136,6 +150,7 @@ public class USBSocketClient implements ActionListener {
 		mSendBtn.addActionListener(this);
 		mClearHistoryBtn.addActionListener(this);
 		mClearCmdBtn.addActionListener(this);
+		mReceiveStreamBtn.addActionListener(this);
 
 		panel.add(mForwardStatus);
 		panel.add(mConnStatus);
@@ -146,6 +161,7 @@ public class USBSocketClient implements ActionListener {
 		panel.add(mClearHistoryBtn);
 		panel.add(mClearCmdBtn);
 
+		panel.add(mReceiveStreamBtn);
 		panel.add(mForwardBtn);
 		panel.add(localPortLabel);
 		panel.add(remotePortLabel);
@@ -173,6 +189,8 @@ public class USBSocketClient implements ActionListener {
 		//清除按钮
 		setConstraints(gbl, gbc, mClearCmdBtn, GridBagConstraints.HORIZONTAL, 1, 1, 4, 4, 1, 0, null);
 		setConstraints(gbl, gbc, mClearHistoryBtn, GridBagConstraints.HORIZONTAL, 1, 1, 4, 5, 1, 0, null);
+
+		setConstraints(gbl, gbc, mReceiveStreamBtn, GridBagConstraints.HORIZONTAL, 1, 1, 4, 6, 1, 0, null);
 		//展示信息
 		setConstraints(gbl, gbc, jsp1, GridBagConstraints.BOTH, 4, 10, 0, 4, 2, 1, null);
 		return panel;
@@ -205,6 +223,48 @@ public class USBSocketClient implements ActionListener {
 		}
 		gbc.insets = insets;
 		gbl.setConstraints(comp, gbc);
+	}
+
+	/**
+	 * 收到客户端传过来的数据并写入到缓冲区
+	 * @param packet
+	 */
+
+	public void addPacketToBuffer(FramePacket packet) {
+		//如果缓冲区存储数据已经超过缓冲最大限度,删除最旧的FramePacket
+		if (mPacketList.size() > mBufferSize) {
+			takeAwayFirstPacket();
+		}
+		mPacketList.addLast(packet);
+	}
+
+	/**
+	 * 获取缓存中第一个帧数据
+	 * @return
+	 */
+	public byte[] takeAwayFirstFrame() {
+		FramePacket packet = takeAwayFirstPacket();
+		if (packet == null) {
+			return null;
+		}
+		return packet.getFrame();
+	}
+
+	/**
+	 * 删除第一个FramePacket
+	 * @return
+	 */
+	private synchronized FramePacket takeAwayFirstPacket() {
+		if (mPacketList.size() <= 0) {
+			return null;
+		}
+		FramePacket fp = mPacketList.getFirst();
+		if (fp == null) {
+			return null;
+		}
+		FramePacket packet = new FramePacket(fp);
+		mPacketList.removeFirst();
+		return packet;
 	}
 
 	/**
@@ -489,7 +549,143 @@ public class USBSocketClient implements ActionListener {
 		} else if (event.getSource() == mClearCmdBtn) {
 			//TextFiled不允许设置为空
 			mCmdTF.setText(" ");
+		} else if (event.getSource() == mReceiveStreamBtn) {
+			preapreReceivePCM();
 		}
+	}
+
+	private void preapreReceivePCM() {
+		setupAdbForward("9000", "9000");
+		final String localPath = "C:\\Users\\bian\\Desktop";
+		final String waveFiflePath = "C:\\Users\\bian\\Desktop\\test.wav";
+		final String rawFilePath = "C:\\Users\\bian\\Desktop\\test.raw";
+		final String fileName = "test.raw";
+		final byte[] END_FLAY = new byte[640];
+		new Thread() {
+			public void run() {
+				try {
+					//建立socket连接
+					Socket socket = new Socket("127.0.0.1", Constants.DOWNLOAD_PORT);
+
+					java.io.InputStream is = socket.getInputStream();
+					//获取文件输入流
+					File file = new File(localPath, fileName);
+					if (file.exists()) {
+						file.delete();
+					} else {
+						file.createNewFile();
+					}
+
+					FileOutputStream fos = new FileOutputStream(file);
+					// 开始接收文件
+					byte[] bytes = new byte[640];
+					int num = 0;
+					boolean end = false;
+					while ((num = is.read(bytes, 0, bytes.length)) != -1) {
+						printPanel("receive data,size=" + num);
+						if(bytes[0] == 0x7f && bytes[1] == 0x7f && bytes[2] == 0x7f && bytes[3] == 0x7f) {
+							end = true;
+							System.out.println(" receive end");
+						}else {
+							end = false;
+						}
+						if(end) {
+							break;
+						}
+						fos.write(bytes, 0, num);
+						fos.flush();
+						
+						
+					}
+					copyWaveFile(rawFilePath, waveFiflePath);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}.start();
+	}
+
+	// 这里得到可播放的音频文件
+	private static final int SAMPLE_RATE = 16000;
+
+	private void copyWaveFile(String inFilename, String outFilename) {
+		System.out.println("copyWaveFile");
+		FileInputStream in = null;
+		FileOutputStream out = null;
+		long totalAudioLen = 0;
+		long totalDataLen = totalAudioLen + 36;
+		long longSampleRate = SAMPLE_RATE;
+		int channels = 1;
+		long byteRate = 16 * SAMPLE_RATE * channels / 8;
+		int minBufferSize = 2560;
+		byte[] data = new byte[minBufferSize];
+		try {
+			in = new FileInputStream(inFilename);
+			out = new FileOutputStream(outFilename);
+			totalAudioLen = in.getChannel().size();
+			totalDataLen = totalAudioLen + 36;
+			writeWaveFileHeader(out, totalAudioLen, totalDataLen, longSampleRate, channels, byteRate);
+			while (in.read(data) != -1) {
+				out.write(data);
+			}
+			in.close();
+			out.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	/**
+	* 这里提供一个头信息。插入这些信息就可以得到可以播放的文件。
+	*/
+	private void writeWaveFileHeader(FileOutputStream out, long totalAudioLen, long totalDataLen, long longSampleRate,
+			int channels, long byteRate) throws IOException {
+		byte[] header = new byte[44];
+		header[0] = 'R'; // RIFF/WAVE header
+		header[1] = 'I';
+		header[2] = 'F';
+		header[3] = 'F';
+		header[4] = (byte) (totalDataLen & 0xff);
+		header[5] = (byte) ((totalDataLen >> 8) & 0xff);
+		header[6] = (byte) ((totalDataLen >> 16) & 0xff);
+		header[7] = (byte) ((totalDataLen >> 24) & 0xff);
+		header[8] = 'W';
+		header[9] = 'A';
+		header[10] = 'V';
+		header[11] = 'E';
+		header[12] = 'f'; // 'fmt ' chunk
+		header[13] = 'm';
+		header[14] = 't';
+		header[15] = ' ';
+		header[16] = 16; // 4 bytes: size of 'fmt ' chunk
+		header[17] = 0;
+		header[18] = 0;
+		header[19] = 0;
+		header[20] = 1; // format = 1
+		header[21] = 0;
+		header[22] = (byte) channels;
+		header[23] = 0;
+		header[24] = (byte) (longSampleRate & 0xff);
+		header[25] = (byte) ((longSampleRate >> 8) & 0xff);
+		header[26] = (byte) ((longSampleRate >> 16) & 0xff);
+		header[27] = (byte) ((longSampleRate >> 24) & 0xff);
+		header[28] = (byte) (byteRate & 0xff);
+		header[29] = (byte) ((byteRate >> 8) & 0xff);
+		header[30] = (byte) ((byteRate >> 16) & 0xff);
+		header[31] = (byte) ((byteRate >> 24) & 0xff);
+		header[32] = (byte) (2 * 16 / 8); // block align
+		header[33] = 0;
+		header[34] = 16; // bits per sample
+		header[35] = 0;
+		header[36] = 'd';
+		header[37] = 'a';
+		header[38] = 't';
+		header[39] = 'a';
+		header[40] = (byte) (totalAudioLen & 0xff);
+		header[41] = (byte) ((totalAudioLen >> 8) & 0xff);
+		header[42] = (byte) ((totalAudioLen >> 16) & 0xff);
+		header[43] = (byte) ((totalAudioLen >> 24) & 0xff);
+		out.write(header, 0, 44);
 	}
 
 	/**
